@@ -1,5 +1,4 @@
 flask
 pandas
 stravalib
-json
 dotenv
