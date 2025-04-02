@@ -19,7 +19,7 @@ client = Client()
 def index():
     url = client.authorization_url(
         client_id=CLIENT_ID,
-        redirect_uri="http://127.0.0.1:5000/authorization",
+        redirect_uri="https://strava-analysis.onrender.com/authorization",
     )
     return redirect(url)
 
