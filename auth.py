@@ -4,12 +4,13 @@ from flask import Flask, request, redirect, jsonify
 from dotenv import load_dotenv, dotenv_values
 import json
 import pandas as pd
+import os
 
 
 app = Flask(__name__)
 
-CLIENT_ID = dotenv_values()["CLIENT_ID"]
-CLIENT_SECRET = dotenv_values()["CLIENT_SECRET"]
+CLIENT_ID = os.environ.get('CLIENT_ID')
+CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 
 client = Client()
 
