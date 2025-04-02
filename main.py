@@ -1,6 +1,8 @@
 from stravalib.client import Client
+from stravalib import unit_helper
 from dotenv import load_dotenv, dotenv_values
-import json, time
+import json
+import matplotlib.pyplot as plt
  
 with open('tokens.json', 'r') as file:
     tokens = json.load(file)
@@ -24,8 +26,10 @@ if client.protocol._token_expired():
     tokens["refresh_token"] = new_token["refresh_token"]
     tokens["expires_at"] = new_token["expires_at"]
 
-    with open('tokens.json', 'w') as file:
+    with open('tokens.json', 'w') as file: # atualiza tokens json
         json.dump(tokens, file)
+
 
 athlete = client.get_athlete()
 print(f"Hi, {athlete.firstname} Welcome to stravalib!")
+
