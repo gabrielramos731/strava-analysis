@@ -3,7 +3,6 @@ from stravalib import unit_helper
 from flask import Flask, request, redirect, jsonify
 from dotenv import load_dotenv, dotenv_values
 import json
-import matplotlib.pyplot as plt
 import pandas as pd
 
 
