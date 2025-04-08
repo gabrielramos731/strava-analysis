@@ -1,10 +1,11 @@
 from stravalib.client import Client
 from stravalib import unit_helper
-from flask import Flask, request, redirect, jsonify
+from flask import Flask, request, redirect, jsonify, Response
 from dotenv import load_dotenv, dotenv_values
 import json
 import pandas as pd
 import os
+import sqlite3
 
 
 app = Flask(__name__)
@@ -19,7 +20,7 @@ client = Client()
 def index():
     url = client.authorization_url(
         client_id=CLIENT_ID,
-        redirect_uri="https://strava-analysis.onrender.com/authorization",
+        redirect_uri="http://127.0.0.1:5000/authorization",
     )
     return redirect(url)
 
@@ -47,12 +48,40 @@ def authorization():
     with open("tokens.json", "w") as token_file:
         json.dump(tokens, token_file)
         
+    save_data()
+    return f'Dados atualizados com sucesso! Você já pode fechar essa janela.'
         
-    #--------------------------
+
     
+def save_data():
+    
+    conn = sqlite3.connect('strava_data.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('DROP TABLE IF EXISTS atividades')
+    cursor.execute('DROP TABLE IF EXISTS detalhes')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS atividades(
+                    id INTEGER PRIMARY KEY,
+                    athlete_name TEXT,
+                    activitie_name TEXT,
+                    elapsed_time TEXT,
+                    sport_type TEXT,
+                    distance REAL
+                    )''')
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS detalhes(
+                        activitie_id INTEGER,
+                        lat REAL,
+                        long REAL,
+                        heartrate INTEGER,
+                        speed REAL,
+                        FOREIGN KEY(activitie_id) REFERENCES atividades(id)
+                        )''')
+
     with open('tokens.json', 'r') as file:
         tokens = json.load(file)
-    
+
     load_dotenv()
     if client.protocol._token_expired(): # caso token expirado
         new_token = client.refresh_access_token(
@@ -68,61 +97,41 @@ def authorization():
         with open('tokens.json', 'w') as file: # atualiza tokens json
             json.dump(tokens, file)
 
-
     athlete = client.get_athlete()
-    print(f"Hi, {athlete.firstname} Welcome to stravalib!")
+    atividades = client.get_activities(before="2025-04-04", limit=8)
 
-    atividades = client.get_activities(before="2025-04-02", limit=2)
-    df_atividade = pd.DataFrame(columns=['id', 'name', 'start_date', 'distance', 'moving_time', 'elapsed_time', 'average_speed', 'average_heartrate'])
-    df_detalhes = pd.DataFrame(columns=['id', 'lat', 'long', 'altitude', 'heartrate', 'velocity_smooth'])
-
-    # últimas atividades
-    dados_expandidos1 = []
-    dados_expandidos2 = []
     for atividade in atividades:
-        df_tmp1 = pd.DataFrame({
-            'id': [atividade.id],
-            'name': [atividade.name],
-            'start_date': [atividade.start_date.isoformat()],
-            'distance': [float(atividade.distance)],
-            'moving_time': [atividade.moving_time],
-            'elapsed_time': [atividade.elapsed_time],
-            'average_speed': [float(atividade.average_speed)],
-            'average_heartrate': [atividade.average_heartrate]
-        })
+        if atividade.type.root == 'WeightTraining':
+            continue
+        
+        # salva resumo da atividade
+        cursor.execute('''INSERT INTO atividades (id, athlete_name, activitie_name, elapsed_time, sport_type, distance)
+                    VALUES (?, ?, ?, ?, ?, ?)''',
+                    (atividade.id,
+                    f'{athlete.firstname} {athlete.lastname}',
+                    atividade.name,
+                    atividade.elapsed_time,
+                    atividade.type.root,
+                    atividade.distance))
+        conn.commit()    
         
         atv_stream = client.get_activity_streams(activity_id=atividade.id,
                                         types=["latlng", "altitude", "heartrate", "velocity_smooth"],
-                                        resolution="low",
+                                        resolution="medium",
                                         series_type="time")
-        df_tmp2 = pd.DataFrame({
-            'id': [atividade.id] * len(atv_stream['latlng'].data),  # Repetir o ID para todas as linhas
-            'lat': [point[0] for point in atv_stream['latlng'].data],
-            'long': [point[1] for point in atv_stream['latlng'].data],
-            'altitude': atv_stream['altitude'].data,
-            'heartrate': atv_stream['heartrate'].data,
-            'velocity_smooth': atv_stream['velocity_smooth'].data
-        })
+        latlng = atv_stream['latlng'].data    
+        heartrate = atv_stream['heartrate'].data 
+        velocity = atv_stream['velocity_smooth'].data 
 
-        dados_expandidos1.append(df_tmp1)
-        dados_expandidos2.append(df_tmp2)
-
-    # Concatenar todos os dados verticalmente
-    df_atividade = pd.concat(dados_expandidos1, ignore_index=True)
-    df_detalhes = pd.concat(dados_expandidos2, ignore_index=True)
+        rows = [
+            (atividade.id, lat, lon, hr, vel)
+            for (lat, lon), hr, vel in zip(latlng, heartrate, velocity)
+        ]
+        cursor.executemany('''INSERT INTO detalhes VALUES (?, ?, ?, ?, ?)''', rows)
+        conn.commit()
         
-    print(df_atividade.info())
-    print(df_detalhes.info())
-    
-    dados_json = {
-        'atividades': df_atividade.to_dict(orient="records"),
-        'detalhes': df_detalhes.to_dict(orient="records")
-    }
-    
-
-    return jsonify(dados_json)
-    
-    # return f'Tokens de acesso obtidos e salvos com sucesso!'
+    return None
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    # app.run(host='0.0.0.0', port=10000) # deploy
+    app.run(debug=True) # teste
