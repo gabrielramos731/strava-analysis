@@ -3,10 +3,9 @@ from stravalib import unit_helper
 from flask import Flask, request, redirect, jsonify, Response
 from dotenv import load_dotenv, dotenv_values
 import json
-import pandas as pd
 import os
 import sqlite3
-
+import datetime
 
 app = Flask(__name__)
 
@@ -68,13 +67,15 @@ def save_data():
                     sport_type TEXT,
                     distance REAL
                     )''')
-
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS detalhes(
                         activitie_id INTEGER,
                         lat REAL,
                         long REAL,
+                        altitude REAL,
                         heartrate INTEGER,
                         speed REAL,
+                        smooth_grade REAL,
                         FOREIGN KEY(activitie_id) REFERENCES atividades(id)
                         )''')
 
@@ -97,7 +98,7 @@ def save_data():
             json.dump(tokens, file)
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before="2025-04-04", limit=8)
+    atividades = client.get_activities(before = datetime.datetime.now(), limit=10)
 
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
@@ -111,22 +112,26 @@ def save_data():
                     atividade.name,
                     atividade.elapsed_time,
                     atividade.type.root,
-                    atividade.distance))
+                    atividade.distance / 1000))
         conn.commit()    
         
         atv_stream = client.get_activity_streams(activity_id=atividade.id,
-                                        types=["latlng", "altitude", "heartrate", "velocity_smooth"],
+                                        types=["latlng", "altitude", "heartrate", "velocity_smooth", "grade_smooth"],
                                         resolution="medium",
                                         series_type="time")
-        latlng = atv_stream['latlng'].data    
+        latlng = atv_stream['latlng'].data   
+        altitude = atv_stream['altitude'].data
         heartrate = atv_stream['heartrate'].data 
-        velocity = atv_stream['velocity_smooth'].data 
+        velocity = atv_stream['velocity_smooth'].data
+        smooth_grade = atv_stream['grade_smooth'].data
 
+        rows = []
         rows = [
-            (atividade.id, lat, lon, hr, vel)
-            for (lat, lon), hr, vel in zip(latlng, heartrate, velocity)
+            (atividade.id, lat, lon, alt, hr, vel * 3.6, grade)
+            for (lat, lon), alt, hr, vel, grade in zip(latlng, altitude, heartrate, velocity, smooth_grade)
         ]
-        cursor.executemany('''INSERT INTO detalhes VALUES (?, ?, ?, ?, ?)''', rows)
+
+        cursor.executemany('''INSERT INTO detalhes VALUES (?, ?, ?, ?, ?, ?, ?)''', rows)
         conn.commit()
         
     return None
