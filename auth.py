@@ -1,11 +1,12 @@
 from stravalib.client import Client
 from dotenv import load_dotenv, dotenv_values
 import json
+import os
 
 load_dotenv()
 
-CLIENT_ID = dotenv_values()["CLIENT_ID"]
-CLIENT_SECRET = dotenv_values()["CLIENT_SECRET"]
+CLIENT_ID =  os.environ.get("CLIENT_ID")
+CLIENT_SECRET =  os.environ.get("CLIENT_SECRET")
 
 client = Client()
 
