@@ -12,6 +12,8 @@ def initialize_database():
                     athlete_name TEXT,
                     activitie_name TEXT,
                     elapsed_time TEXT,
+                    started_date TEXT,
+                    started_time TEXT,
                     sport_type TEXT,
                     distance REAL
                     )''')
