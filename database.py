@@ -15,11 +15,12 @@ def initialize_database():
     )
     cursor = conn.cursor()
     
-    cursor.execute('DROP TABLE IF EXISTS detalhes')
-    cursor.execute('DROP TABLE IF EXISTS atividades')
+    # cursor.execute('DROP TABLE IF EXISTS detalhes')
+    # cursor.execute('DROP TABLE IF EXISTS atividades')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS atividades(
                     id SERIAL PRIMARY KEY,
+                    activity_id BIGINT UNIQUE,
                     athlete_name TEXT,
                     activitie_name TEXT,
                     elapsed_time TEXT,

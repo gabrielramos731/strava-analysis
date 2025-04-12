@@ -25,17 +25,22 @@ def save_activities_to_db():
     cursor = conn.cursor()
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before=datetime.datetime.now(), limit=2)
+    atividades = client.get_activities(before=datetime.datetime.now(), limit=6)
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
+            continue
+        
+        cursor.execute("SELECT 1 FROM atividades WHERE activity_id = %s", (atividade.id,))
+        if cursor.fetchone() is not None: # Verifica se a atividade já existe
             continue
         
         atv_datetime = {'date': str(pd.to_datetime(atividade.start_date_local).date().strftime('%d-%m-%Y')),
                         'time': str(pd.to_datetime(atividade.start_date_local).time())}
         
-        cursor.execute('''INSERT INTO atividades (athlete_name, activitie_name, elapsed_time, sport_type, started_date, started_time, distance)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id''',
+        cursor.execute('''INSERT INTO atividades (athlete_name, activity_id, activitie_name, elapsed_time, sport_type, started_date, started_time, distance)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id''',
                     (f'{athlete.firstname} {athlete.lastname}',
+                     atividade.id,
                      atividade.name,
                      atividade.elapsed_time,
                      atividade.type.root,
