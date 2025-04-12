@@ -25,7 +25,7 @@ def save_activities_to_db():
     cursor = conn.cursor()
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before=datetime.datetime.now(), limit=6)
+    atividades = client.get_activities(before=datetime.datetime.now(), limit=10)
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
             continue
@@ -51,10 +51,11 @@ def save_activities_to_db():
         conn.commit()
 
         atv_stream = client.get_activity_streams(activity_id=atividade.id,
-                                        types=["latlng", "altitude", "heartrate", "velocity_smooth", "grade_smooth"],
+                                        types=["latlng", "time", "altitude", "heartrate", "velocity_smooth", "grade_smooth"],
                                         resolution="low",
                                         series_type="time")
         latlng = atv_stream['latlng'].data   
+        time = atv_stream['time'].data
         altitude = atv_stream['altitude'].data
         heartrate = atv_stream['heartrate'].data 
         velocity = atv_stream['velocity_smooth'].data
@@ -62,12 +63,13 @@ def save_activities_to_db():
         heart_zones = process_heartzone(heartrate, atividade)
 
         rows = [
-            (activitie_id, lat, lon, alt, hr, round(vel * 3.6, 2), grade, hr_zone)
-            for (lat, lon), alt, hr, vel, grade, hr_zone in zip(latlng, altitude, heartrate, velocity, smooth_grade, heart_zones)
+            (activitie_id, lat, lon, time, alt, hr, round(vel * 3.6, 2), grade, hr_zone)
+            for (lat, lon), time, alt, hr, vel, grade, hr_zone 
+            in zip(latlng, time, altitude, heartrate, velocity, smooth_grade, heart_zones)
         ]
 
-        cursor.executemany('''INSERT INTO detalhes (activitie_id, lat, long, altitude, heartrate, speed, smooth_grade, heart_zones)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''', rows)
+        cursor.executemany('''INSERT INTO detalhes (activitie_id, lat, long, time, altitude, heartrate, speed, smooth_grade, heart_zones)
+                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)''', rows)
         conn.commit()
         atv_datetime.clear()
     cursor.close()

@@ -15,8 +15,8 @@ def initialize_database():
     )
     cursor = conn.cursor()
     
-    # cursor.execute('DROP TABLE IF EXISTS detalhes')
-    # cursor.execute('DROP TABLE IF EXISTS atividades')
+    cursor.execute('DROP TABLE IF EXISTS detalhes')
+    cursor.execute('DROP TABLE IF EXISTS atividades')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS atividades(
                     id SERIAL PRIMARY KEY,
@@ -34,6 +34,7 @@ def initialize_database():
                         activitie_id INTEGER REFERENCES atividades(id),
                         lat REAL,
                         long REAL,
+                        time REAL,
                         altitude REAL,
                         heartrate INTEGER,
                         speed REAL,
