@@ -36,7 +36,8 @@ def initialize_database():
                         altitude REAL,
                         heartrate INTEGER,
                         speed REAL,
-                        smooth_grade REAL
+                        smooth_grade REAL,
+                        heart_zones INTEGER
                         )''')
     conn.commit()
     cursor.close()

@@ -25,8 +25,7 @@ def save_activities_to_db():
     cursor = conn.cursor()
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before=datetime.datetime.now(), limit=5)
-
+    atividades = client.get_activities(before=datetime.datetime.now(), limit=2)
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
             continue
@@ -55,15 +54,41 @@ def save_activities_to_db():
         heartrate = atv_stream['heartrate'].data 
         velocity = atv_stream['velocity_smooth'].data
         smooth_grade = atv_stream['grade_smooth'].data
+        heart_zones = process_heartzone(heartrate, atividade)
 
         rows = [
-            (activitie_id, lat, lon, alt, hr, round(vel * 3.6, 2), grade)
-            for (lat, lon), alt, hr, vel, grade in zip(latlng, altitude, heartrate, velocity, smooth_grade)
+            (activitie_id, lat, lon, alt, hr, round(vel * 3.6, 2), grade, hr_zone)
+            for (lat, lon), alt, hr, vel, grade, hr_zone in zip(latlng, altitude, heartrate, velocity, smooth_grade, heart_zones)
         ]
 
-        cursor.executemany('''INSERT INTO detalhes (activitie_id, lat, long, altitude, heartrate, speed, smooth_grade)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s)''', rows)
+        cursor.executemany('''INSERT INTO detalhes (activitie_id, lat, long, altitude, heartrate, speed, smooth_grade, heart_zones)
+                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''', rows)
         conn.commit()
         atv_datetime.clear()
     cursor.close()
     conn.close()
+    
+def process_heartzone(heartrate, atividade):
+    defined_zones = {}
+    zones = []
+    for idx, zone in enumerate(atividade.zones[0].distribution_buckets):
+        defined_zones[idx+1] = [zone.min, zone.max]
+    for bpm in heartrate:
+        if bpm <= defined_zones[1][1]:
+            zones.append(1)
+        elif bpm <= defined_zones[2][1]:
+            zones.append(2)
+        elif bpm <= defined_zones[3][1]:
+            zones.append(3)
+        elif bpm <= defined_zones[4][1]:
+            zones.append(4)
+        else:
+            zones.append(5)
+    return zones
+
+# TODO:
+    ''''
+    1. Salvar atividade.id para verificar se já existe na tabela atividades (não adicionar se já existe)
+    2. Adicionar dados das zonas de FC em detalhes - OK
+    3. Adicionar zonas de fc em atividades
+    '''
