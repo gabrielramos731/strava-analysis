@@ -35,6 +35,7 @@ def initialize_database():
                         lat REAL,
                         long REAL,
                         time REAL,
+                        distance REAL,
                         altitude REAL,
                         heartrate INTEGER,
                         speed REAL,
