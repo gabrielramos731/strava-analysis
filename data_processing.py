@@ -25,10 +25,16 @@ def save_activities_to_db():
     cursor = conn.cursor()
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before=datetime.datetime.now(), limit=10)
+    atividades = client.get_activities(before=datetime.datetime.now(), limit=3)
+    
+    i=0
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
             continue
+
+        while i<1:
+            create_zones_table(atividade, cursor)  # zonas criadas com base na primeira atividade
+            i+=1
         
         cursor.execute("SELECT 1 FROM atividades WHERE activity_id = %s", (atividade.id,))
         if cursor.fetchone() is not None: # Verifica se a atividade já existe
@@ -94,9 +100,18 @@ def process_heartzone(heartrate, atividade):
             zones.append(5)
     return zones
 
+def create_zones_table(atividade, cursor):
+
+    defined_zones = {}
+    for idx, zone in enumerate(atividade.zones[0].distribution_buckets):
+        defined_zones[idx+1] = [zone.min, zone.max]
+        cursor.execute('''INSERT INTO zonas_frequencia (zona_id, minimo, maximo)
+                          VALUES (%s, %s, %s)''',
+                          (idx, int(zone.min), int(zone.max)))
+    
+    
 # TODO:
     ''''
     1. Salvar atividade.id para verificar se já existe na tabela atividades (não adicionar se já existe)
     2. Adicionar dados das zonas de FC em detalhes - OK
-    3. Adicionar zonas de fc em atividades
     '''
