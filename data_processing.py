@@ -7,111 +7,124 @@ import json
 import pandas as pd
 
 load_dotenv()
-
 client = Client()
 
-def save_activities_to_db():
-    with open('tokens.json', 'r') as file:
-        tokens = json.load(file)
-    client.access_token = tokens["access_token"]
-
-    conn = psycopg2.connect(
+def get_db_connection():
+    return psycopg2.connect(
         host=os.getenv("POSTGRES_HOST"),
         port=os.getenv("POSTGRES_PORT"),
         database=os.getenv("POSTGRES_DB"),
         user=os.getenv("POSTGRES_USER"),
         password=os.getenv("POSTGRES_PASSWORD")
     )
+
+def get_tokens():
+    with open('tokens.json', 'r') as file:
+        return json.load(file)
+
+def get_activities(client, limit=3):
+    return client.get_activities(before=datetime.datetime.now(), limit=limit)
+
+def insert_zones(cursor, atividade):
+    for idx, zone in enumerate(atividade.zones[0].distribution_buckets):
+        cursor.execute('''
+            INSERT INTO zonas_frequencia (zona_id, minimo, maximo)
+            VALUES (%s, %s, %s)
+        ''', (idx, int(zone.min), int(zone.max)))
+
+def atividade_ja_existe(cursor, activity_id):
+    cursor.execute("SELECT 1 FROM atividades WHERE activity_id = %s", (activity_id,))
+    return cursor.fetchone() is not None
+
+def inserir_atividade(cursor, athlete, atividade):
+    atv_datetime = {
+        'date': pd.to_datetime(atividade.start_date_local).strftime('%d-%m-%Y'),
+        'time': pd.to_datetime(atividade.start_date_local).strftime('%H:%M:%S')
+    }
+
+    cursor.execute('''
+        INSERT INTO atividades (athlete_name, activity_id, activitie_name, elapsed_time, sport_type, started_date, started_time, distance)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+    ''', (
+        f'{athlete.firstname} {athlete.lastname}',
+        atividade.id,
+        atividade.name,
+        atividade.elapsed_time,
+        atividade.type.root,
+        atv_datetime['date'],
+        atv_datetime['time'],
+        round(atividade.distance / 1000, 2)
+    ))
+    return cursor.fetchone()[0]
+
+def get_stream_data(client, activity_id):
+    return client.get_activity_streams(
+        activity_id=activity_id,
+        types=["latlng", "time", "distance", "altitude", "heartrate", "velocity_smooth", "grade_smooth"],
+        resolution="low",
+        series_type="time"
+    )
+
+def calcular_zonas_frequencia(atividade, heartrate):
+    zones = []
+    defined_zones = {idx + 1: [zone.min, zone.max] for idx, zone in enumerate(atividade.zones[0].distribution_buckets)}
+
+    for bpm in heartrate:
+        for z_id in range(1, 6):
+            if bpm <= defined_zones[z_id][1]:
+                zones.append(z_id)
+                break
+    return zones
+
+def inserir_detalhes(cursor, activitie_id, atividade, atv_stream):
+    latlng = atv_stream['latlng'].data
+    time = atv_stream['time'].data
+    distance = atv_stream['distance'].data
+    altitude = atv_stream['altitude'].data
+    heartrate = atv_stream['heartrate'].data
+    velocity = atv_stream['velocity_smooth'].data
+    grade = atv_stream['grade_smooth'].data
+    heart_zones = calcular_zonas_frequencia(atividade, heartrate)
+
+    rows = [
+        (activitie_id, lat, lon, t, d, alt, hr, round(vel * 3.6, 2), g, hz)
+        for (lat, lon), t, d, alt, hr, vel, g, hz
+        in zip(latlng, time, distance, altitude, heartrate, velocity, grade, heart_zones)
+    ]
+
+    cursor.executemany('''
+        INSERT INTO detalhes (activitie_id, lat, long, time, distance, altitude, heartrate, speed, smooth_grade, heart_zones)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', rows)
+
+def save_activities_to_db():
+    tokens = get_tokens()
+    client.access_token = tokens["access_token"]
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     athlete = client.get_athlete()
-    atividades = client.get_activities(before=datetime.datetime.now(), limit=3)
-    
-    i=0
+    atividades = get_activities(client)
+
+    zonas_criadas = False
+
     for atividade in atividades:
         if atividade.type.root == 'WeightTraining':
             continue
 
-        while i<1:
-            create_zones_table(atividade, cursor)  # zonas criadas com base na primeira atividade
-            i+=1
-        
-        cursor.execute("SELECT 1 FROM atividades WHERE activity_id = %s", (atividade.id,))
-        if cursor.fetchone() is not None: # Verifica se a atividade já existe
+        if not zonas_criadas:
+            insert_zones(cursor, atividade)
+            zonas_criadas = True
+
+        if atividade_ja_existe(cursor, atividade.id):
             continue
-        
-        atv_datetime = {'date': str(pd.to_datetime(atividade.start_date_local).date().strftime('%d-%m-%Y')),
-                        'time': str(pd.to_datetime(atividade.start_date_local).time())}
-        
-        cursor.execute('''INSERT INTO atividades (athlete_name, activity_id, activitie_name, elapsed_time, sport_type, started_date, started_time, distance)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id''',
-                    (f'{athlete.firstname} {athlete.lastname}',
-                     atividade.id,
-                     atividade.name,
-                     atividade.elapsed_time,
-                     atividade.type.root,
-                     atv_datetime['date'],
-                     atv_datetime['time'],
-                     round(atividade.distance / 1000, 2)))
-        activitie_id = cursor.fetchone()[0]
+
+        activitie_id = inserir_atividade(cursor, athlete, atividade)
         conn.commit()
 
-        atv_stream = client.get_activity_streams(activity_id=atividade.id,
-                                        types=["latlng", "time", "distance", "altitude", "heartrate", "velocity_smooth", "grade_smooth"],
-                                        resolution="low",
-                                        series_type="time")
-        latlng = atv_stream['latlng'].data   
-        time = atv_stream['time'].data
-        distance = atv_stream['distance'].data
-        altitude = atv_stream['altitude'].data
-        heartrate = atv_stream['heartrate'].data 
-        velocity = atv_stream['velocity_smooth'].data
-        smooth_grade = atv_stream['grade_smooth'].data
-        heart_zones = process_heartzone(heartrate, atividade)
-
-        rows = [
-            (activitie_id, lat, lon, time, distance, alt, hr, round(vel * 3.6, 2), grade, hr_zone)
-            for (lat, lon), time, distance, alt, hr, vel, grade, hr_zone 
-            in zip(latlng, time, distance, altitude, heartrate, velocity, smooth_grade, heart_zones)
-        ]
-
-        cursor.executemany('''INSERT INTO detalhes (activitie_id, lat, long, time, distance, altitude, heartrate, speed, smooth_grade, heart_zones)
-                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''', rows)
+        atv_stream = get_stream_data(client, atividade.id)
+        inserir_detalhes(cursor, activitie_id, atividade, atv_stream)
         conn.commit()
-        atv_datetime.clear()
+
     cursor.close()
     conn.close()
-    
-def process_heartzone(heartrate, atividade):
-    defined_zones = {}
-    zones = []
-    for idx, zone in enumerate(atividade.zones[0].distribution_buckets):
-        defined_zones[idx+1] = [zone.min, zone.max]
-    for bpm in heartrate:
-        if bpm <= defined_zones[1][1]:
-            zones.append(1)
-        elif bpm <= defined_zones[2][1]:
-            zones.append(2)
-        elif bpm <= defined_zones[3][1]:
-            zones.append(3)
-        elif bpm <= defined_zones[4][1]:
-            zones.append(4)
-        else:
-            zones.append(5)
-    return zones
-
-def create_zones_table(atividade, cursor):
-
-    defined_zones = {}
-    for idx, zone in enumerate(atividade.zones[0].distribution_buckets):
-        defined_zones[idx+1] = [zone.min, zone.max]
-        cursor.execute('''INSERT INTO zonas_frequencia (zona_id, minimo, maximo)
-                          VALUES (%s, %s, %s)''',
-                          (idx, int(zone.min), int(zone.max)))
-    
-    
-# TODO:
-    ''''
-    1. Salvar atividade.id para verificar se já existe na tabela atividades (não adicionar se já existe)
-    2. Adicionar dados das zonas de FC em detalhes - OK
-    '''

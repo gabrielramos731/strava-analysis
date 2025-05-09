@@ -15,13 +15,10 @@ def index():
 @app.route('/authorization')
 def authorization():
     code = request.args.get('code')
+    
     exchange_code_for_token(code)
     initialize_database()
-    s_time = time.time()
     save_activities_to_db()
-    e_time = time.time()
-    elapsed_time = e_time - s_time
-    print(f"Tempo de execução: {elapsed_time:.2f} segundos")
     return 'Dados atualizados com sucesso! Você já pode fechar essa janela.'
 
 if __name__ == '__main__':
