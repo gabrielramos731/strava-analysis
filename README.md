@@ -34,6 +34,10 @@ O projeto envolve as seguintes etapas:
 
 ---
 
+![imagem](strava_app.jpeg)
+
+---
+
 ### Status
 
 - [x] Autenticação com OAuth (Flask)
